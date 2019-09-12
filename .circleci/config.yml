@@ -1,36 +1,35 @@
 version: 2
 jobs:
-  one:
+  build:
     docker:
-      - image: circleci/ruby:2.4.1
+      - image: circleci/python:2.7.14
+        environment:
+          FLASK_CONFIG: testing
     steps:
       - checkout
-      - run: echo "A first hello"
-      - run: mkdir -p my_workspace
-      - run: echo "Trying out workspaces" > my_workspace/echo-output
-      - persist_to_workspace:
-          root: my_workspace
-          paths:
-            - echo-output
-  two:
-    docker:
-      - image: circleci/ruby:2.4.1
-    steps:
-      - checkout
-      - run: echo "A second hello"
-      - attach_workspace:
-          at: my_workspace 
-      - run: |
-          if [[ $(cat my_workspace/echo-output) == "Trying out workspaces" ]]; then
-            echo "It worked!";
-          else
-            echo "Nope!"; exit 1
-          fi
-workflows:
-  version: 2
-  one_and_two:
-    jobs:
-      - one
-      - two:
-          requires:
-            - one
+      - run:
+        name: Setup VirtualEnv
+        command: |
+          echo 'export TAG=0.1.${CIRCLE_BUILD_NUM}' >>$BASH_ENV
+          echo 'export IMAGE_NAME=python-circleci-docker' >> $BASH_ENV
+          virtualenv helloworld
+          . helloworld/bin/activet
+          pip install --no-cache-dir -r requirements.txt
+      - run:
+          name: Run Tests
+          command: |
+            . helloworld/bin/activate
+            python test_hello_world.py
+      - setup_remote_docker:
+        docker_layer_caching: true
+      - run:
+          name: Build and push Docker Imange
+          command: |
+            . helloworld/bin/activate
+            pyinstaller -F hello_world.py
+            docker-build -t kafuuma/$IMAGE_LOGIN --password-stdin
+            docker push kafuuma/$IMAGE:$TAG
+      - run:
+          name: Deploy app to Digital Ocean Server via Docker
+          command: |
+            ssh -o StrictHostKeyChecking=no root@hello.dpunks.org "/bin/bash ./deploy_app.sh kafuuma/$IMAGE_NAME:$TAG"
